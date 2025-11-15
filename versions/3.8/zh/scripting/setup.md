@@ -1,236 +1,690 @@
-# 创建脚本
+#!/usr/bin/env bash
+set -euo pipefail
 
-## 创建组件脚本
+REPO="https://github.com/ccccyy0924-pixel/3c-cy0924.git"
+BRANCH="feature"
+COMMIT_MSG="Add OpenAPI spec and mock server (docs/openapi.yaml + server/)"
 
-在 Cocos Creator 中，脚本也是资源的一部分。在 **资源管理器** 中创建的脚本，默认是一个 NewComponent 组件，我们称之为组件脚本。可通过以下两种方式创建：
+# 可改為你本機已有的 working dir：若你已 clone repo，請把下面改為直接在該 repo 執行
+WORKDIR="$(mktemp -d)"
+echo "Using temp dir: $WORKDIR"
+cd "$WORKDIR"
 
-- **资源管理器** 面板空白位置或某个文件夹资源下右击菜单，选择 **Create** > **TypeScript** > **NewComponent**。
-- **资源管理器** 左上角的 **+** 按钮，点击后选择 **TypeScript** > **NewComponent**。
+echo "Cloning repo..."
+git clone "$REPO"
+cd 3c-cy0924 || (echo "Failed to enter repo folder. 如果倉庫是 private，請先 clone 到本機使用有權限的帳號。" && exit 1)
 
-![create script](setup/create-script.png)
+echo "Creating new branch: $BRANCH"
+git checkout -b "$BRANCH"
 
-在创建脚本时，名称不能为空，输入框默认为 `NewComponent`。我们将其修改为 `say-hello`，可以看到在 **资源管理器** 中生成了一个名为 `say-hello` 的脚本文件。
+echo "Creating directories..."
+mkdir -p docs server
 
-![say-hello-1](setup/say-hello-1.png)
+echo "Writing docs/openapi.yaml..."
+cat > docs/openapi.yaml <<'YAML'
+openapi: 3.0.3
+info:
+  title: 三國主公 — 網頁遊戲 API
+  description: OpenAPI 規範（最小可行產品 / 核心端點）
+  version: "1.0.0"
+servers:
+  - url: http://localhost:3000
+    description: Local dev server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        level:
+          type: integer
+        vip_level:
+          type: integer
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+    City:
+      type: object
+      properties:
+        id:
+          type: integer
+        owner_id:
+          type: integer
+        name:
+          type: string
+        level:
+          type: integer
+        x:
+          type: integer
+        y:
+          type: integer
+    Resources:
+      type: object
+      properties:
+        city_id:
+          type: integer
+        food:
+          type: integer
+        wood:
+          type: integer
+        iron:
+          type: integer
+        coin:
+          type: integer
+    General:
+      type: object
+      properties:
+        id:
+          type: integer
+        owner_id:
+          type: integer
+        name:
+          type: string
+        rarity:
+          type: string
+        level:
+          type: integer
+        lead:
+          type: integer
+        force:
+          type: integer
+        intellect:
+          type: integer
+        skills:
+          type: array
+          items:
+            type: object
+    Troop:
+      type: object
+      properties:
+        id:
+          type: integer
+        owner_id:
+          type: integer
+        city_id:
+          type: integer
+        general_id:
+          type: integer
+        count:
+          type: integer
+        troop_type:
+          type: string
+        march_state:
+          type: string
+    Alliance:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        leader_id:
+          type: integer
+        members_count:
+          type: integer
+    Battle:
+      type: object
+      properties:
+        id:
+          type: integer
+        attacker_id:
+          type: integer
+        defender_id:
+          type: integer
+        result:
+          type: string
+        log:
+          type: object
+paths:
+  /auth/register:
+    post:
+      summary: 註冊新用戶
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "201":
+          description: 註冊成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          description: 參數錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      summary: 登入並取得 JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: 登入成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "401":
+          description: 認證失敗
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /users/me:
+    get:
+      summary: 取得當前使用者資訊
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 使用者資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "401":
+          description: 未授權
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cities/{cityId}:
+    get:
+      summary: 取得城池資訊
+      parameters:
+        - in: path
+          name: cityId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 城池資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/City'
+        "404":
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cities/{cityId}/resources:
+    get:
+      summary: 取得城池資源狀態
+      parameters:
+        - in: path
+          name: cityId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 資源資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resources'
+  /cities/{cityId}/collect-resources:
+    post:
+      summary: 收取資源 (領取產出)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: cityId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 收取成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resources'
+        "401":
+          description: 未授權
+  /generals:
+    get:
+      summary: 列出玩家武將（或公共列表）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 武將列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/General'
+  /generals/recruit:
+    post:
+      summary: 招募武將
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  description: 招募類型（普通/高級/活動）
+      responses:
+        "201":
+          description: 招募成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/General'
+  /troops/march:
+    post:
+      summary: 發起行軍 / 出征
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                city_id:
+                  type: integer
+                target:
+                  type: object
+                  properties:
+                    x:
+                      type: integer
+                    y:
+                      type: integer
+                    type:
+                      type: string
+                troops:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      general_id:
+                        type: integer
+                      count:
+                        type: integer
+      responses:
+        "202":
+          description: 出征已派出（進行中）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  march_id:
+                    type: integer
+                  eta_seconds:
+                    type: integer
+  /battles/{battleId}:
+    get:
+      summary: 查詢戰鬥/戰報
+      parameters:
+        - in: path
+          name: battleId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 戰鬥詳情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Battle'
+  /map/points:
+    get:
+      summary: 查詢世界地圖上的點（城池/資源點/要塞）
+      parameters:
+        - in: query
+          name: bbox
+          description: 查詢框 (x1,y1,x2,y2)
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 地圖點列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    type:
+                      type: string
+                    x:
+                      type: integer
+                    y:
+                      type: integer
+                    owner:
+                      type: string
+  /alliances:
+    get:
+      summary: 列出同盟
+      responses:
+        "200":
+          description: 同盟列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Alliance'
+    post:
+      summary: 創建同盟
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "201":
+          description: 同盟創建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alliance'
+  /alliances/{allianceId}/join:
+    post:
+      summary: 加入同盟（申請/直接加入視權限）
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: allianceId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 加入成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alliance'
+  /tasks:
+    get:
+      summary: 查詢任務（新手/日常）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 任務列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    title:
+                      type: string
+                    status:
+                      type: string
+security:
+  - bearerAuth: []
+YAML
 
-![say-hello-2](setup/say-hello-2.png)
-
-新建后的初始脚本代码如下：
-
-```ts
-import { _decorator, Component, Node } from 'cc';
-const { ccclass, property } = _decorator;
-
-@ccclass('say_hello')
-export class say_hello extends Component {
-    start() {
-
-    }
-
-    update(deltaTime: number) {
-        
-    }
-}
-```
-
-> **注意点**：
->
-> 1. 项目中所有脚本的类名 `ClassName` （如上例中的 'say_hello'） 不允许重复，即使脚本文件在不同的目录下，各自的代码里也不允许有相同的类名。
->
-> 2. 脚本文件名称和脚本的类名不同，在输入初始的文件名之后，文件名会被处理为类名，处理的逻辑详见下文 **类名的生成**。脚本文件生成后，对文件的后续操作**脚本重命名**，新的文件名不会再去生成并替换代码里的类名，不再影响了。
->
-> 3. 我们推荐用户使用 TypeScript 来编写脚本，目前 **资源管理器** 中仅支持创建 TypeScript 文件。但如果用户想要使用 JavaScript 来编写脚本的话，可以直接在操作系统的文件夹中创建 JavaScript 文件，或在其他代码编辑软件中创建 JavaScript 文件。
-
-## 类名的生成
-
-在获得初始文件名数据后，会生成两种规则的类名 `ClassName`，并以变量的方式提供给**脚本模板**。
-
-- 下划线格式，变量名为 `<%UnderscoreCaseClassName%>`。这种格式是为了保持类名尽可能地与文件名一致，保持一致的好处是有利于代码全局搜索和替换。
-- 驼峰格式，变量名为 `<%CamelCaseClassName%>`。这种格式是为了保持与主流的脚本标准一致，首字母大写的驼峰格式。
-
-## 添加脚本到场景节点中
-
-**将脚本添加到场景节点中，实际上就是为这个节点添加一个脚本组件。**
-在 **层级管理器** 选中某个节点，此时 **属性检查器** 面板会显示该节点的属性。以下两种添加方式：
-
-- 直接将 **资源管理器** 中的脚本拖拽当前节点的到 **属性检查器** 中，即为挂载了一个组件。
-
-- 点击 **属性检查器** 最下方的 **添加组件** 按钮，选择 **自定义脚本 -> say_hello**，即为挂载组件。
-
-    ![add component](setup/add-component.png)
-    ![add component done](setup/add-component-done.png)
-
-## 编辑脚本
-
-开发者可根据自己的需求，选择自己喜爱的代码编辑软件（如：Vim、Sublime Text、Web Storm、VSCode 等）进行脚本编辑。编辑器的 **偏好设置** > **外部程序** 可设置指定的脚本打开工具。
-
-![preference script editor](setup/preference-script-editor.png)
-
-外部程序配置完成后，在 **资源管理器** 中双击脚本资源，便会用指定的程序打开该脚本。
-编辑脚本代码保存后，鼠标点击回到编辑器，编辑器会自动检测到脚本的改动，重新对其进行编译后使用。
-
-编写脚本代码，可阅读以下文档了解相关内容：
-
-- [配置代码编辑环境](coding-setup.md)
-- [脚本基础](basic.md)
-
-脚本文件创建成功后，再对文件进行重命名，或者对代码里的类名进行修改，文件名和类名均不会再互相影响。
-
-- 以 `say-hello` 为例，我们在 **资源管理器** 中将其重命名为 `hello`。
-
-重新选中该资源，查看 **属性检查器**，代码还是显示 `class say_hello`，不会变动。
-
-重新选中 **层级管理器** 上刚添加组件的节点 **Node**，查看 **属性检查器**，组件名称还是显示 `say_hello`，不会变动。
-
-我们继续双击当前的 `hello` 资源，将类名改为 **say**，保存后回到编辑器：
-
-```ts
-import { _decorator, Component, Node } from 'cc';
-const { ccclass, property } = _decorator;
-
-@ccclass('say')
-export class say extends Component {
-    start() {
-
-    }
-
-    update(deltaTime: number) {
-        
-    }
-}
-```
-
-同样的脚本文件名 `hello` 不会变化。节点 **Node** 里的组件名称变为 **say**。
-
-> **注意**：这里需要记得将装饰器 `@ccclass('say_hello')` 中的内容也改为 `@ccclass('say')`。
-
-![modify script](setup/modify-script.png)
-
-## <a id="custom-script-template">脚本模板</a>
-
-从编辑器 v3.3 开始，支持在项目中管理不同的脚本模板。
-
-- 新建一个项目，新项目不会自动创建自定义脚本模板所在的目录 `.creator/asset-template/typescript`。
-- 可以手动创建上述目录。也可以通过 **资源管理器** 的右击菜单里的菜单，点击后才生成目录。
-
-    ![custom script](setup/custom-script.png)
-
-默认的 `NewComponent` 脚本模板仍在引擎内置资源目录下 `resources\3d\engine\editor\assets\default_file_content\ts`。
-文件代码为：
-
-```ts
-import { _decorator, Component, Node } from 'cc';
-const { ccclass, property } = _decorator;
-
-@ccclass('<%UnderscoreCaseClassName%>')
-export class <%UnderscoreCaseClassName%> extends Component {
-    start() {
-
-    }
-
-    update(deltaTime: number) {
-        
-    }
-}
-
-/**
- * COMMENTS_GENERATE_IGNORE
- * Use "COMMENTS_GENERATE_IGNORE" tag if you do not want later created scripts to contain these comments.
- * 
- * Predefined Variables
- * You can use predefined variables below to setup your scripting preference. For example, whether to use camel case style.
- * 
- * <%UnderscoreCaseClassName%>, class name in underscore format, like 'new_component'
- * <%CamelCaseClassName%>, class name in camel format, like 'NewComponent'
- * <%Author%>, Who create this file
- * <%DateTime%>, when create this file
- * <%FileBasename%>, creating file name with extension
- * <%FileBasenameNoExtension%>, creating file name without extension
- * <%URL%>, url of this file in COCOS ASSET URL format
- * <%ManualUrl%>, url of office help document, like 'https://docs.cocos.com/creator/manual/en/'
- *
- * 
- * Example:
- * 
-  @ccclass('<%UnderscoreCaseClassName%>')
-  export class <%UnderscoreCaseClassName%> extends Component {
-  
-    // class member could be defined like this.
-    dummy = '';
-
-    // Use 'property' decorator if your want the member to be serializable.
-    @property
-    serializableDummy = 0;
-
-    start () {
-        // Your initialization goes here.
-    }
-
-    update (deltaTime: number) {
-        // Your update function goes here.
-    }
-
+echo "Writing server/package.json..."
+cat > server/package.json <<'JSON'
+{
+  "name": "sanguo-master-api-mock",
+  "version": "1.0.0",
+  "description": "Mock backend for 三國主公 OpenAPI demo",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
   }
- *
- * Learn more about scripting: <%ManualUrl%>scripting/
- * Learn more about CCClass: <%ManualUrl%>scripting/decorator.html
- * Learn more about life-cycle callbacks: <%ManualUrl%>scripting/life-cycle-callbacks.html
- */
+}
+JSON
 
-```
+echo "Writing server/index.js..."
+cat > server/index.js <<'JS'
+const express = require('express');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
 
-> **注意**：
->
-> 1. 脚本模板中大量的注释并不会生成到脚本文件中，因为在注释里我们使用了关键词标注 `COMMENTS_GENERATE_IGNORE` 只要此关键词在某段注释里，那么生成脚本文件就会将该段注释忽略掉。
->
-> 2. `Predefined Variables` 我们准备了一些预制的变量，在生成脚本文件的时候可以作为辅助的信息，比如作者 `<%Author%>`。
->
-> 3. 特别准备了两种类名格式：`<%UnderscoreCaseClassName%>` 和 `<%CamelCaseClassName%>`。名称前后仍可以添加自定义的前缀或后缀，如加个 `Robot` 前缀 `Robot<%CamelCaseClassName%>`。
->
-> 4. 通过点击右击菜单的方式，项目自定义脚本模板目录下会自动生成一个文档网址快捷链接，双击即会调出浏览器打开指定网页：`Custom Script Template Help Documentation`。
->
->    ![custom script help](setup/custom-script-help.png)
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
 
-### 添加脚本模板
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'replace_with_strong_secret';
 
-我们从复制上述内置 `NewComponent` 模板的代码进行修改，类名为驼峰格式，加 `Robot` 前缀，文件另存为无后缀名的文件 `CustomComponent`，保存在项目自定义脚本模板的路径下，即 `.creator/asset-template/typescript/CustomComponent`。
+// --- In-memory mock DB ---
+let users = [];
+let cities = [
+  { id: 1, owner_id: 1, name: "許昌", level: 5, x: 100, y: 200 },
+];
+let resources = {
+  1: { city_id: 1, food: 1000, wood: 800, iron: 500, coin: 1200 }
+};
+let generals = [
+  { id: 1, owner_id: 1, name: "關羽", rarity: "epic", level: 10, lead: 90, force: 95, intellect: 60, skills: [] }
+];
+let alliances = [];
+let marches = [];
+let battles = [];
 
-![custom script file](setup/custom-script-file.png)
-
-`CustomComponent` 模板内容修改为：
-
-```ts
-import { _decorator, Component, Node } from 'cc';
-const { ccclass, property } = _decorator;
-
-/**
- * 
- * <%UnderscoreCaseClassName%>
- * <%CamelCaseClassName%>
- * <%Author%>
- * <%DateTime%>
- * <%FileBasename%>
- * <%FileBasenameNoExtension%>
- * <%URL%>
- * <%ManualUrl%>
- *
- */
-
-@ccclass('Robot<%CamelCaseClassName%>')
-export class Robot<%CamelCaseClassName%> extends Component {
-    start() {
-
-    }
-
-    update(deltaTime: number) {
-        
-    }
+// --- Helpers ---
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ message: 'Missing Authorization' });
+  const parts = auth.split(' ');
+  if (parts.length !== 2) return res.status(401).json({ message: 'Invalid Authorization' });
+  const token = parts[1];
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (e) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
 }
 
-```
+// --- Routes ---
+// Auth
+app.post('/auth/register', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ message: 'username/password required' });
+  if (users.find(u => u.username === username)) return res.status(400).json({ message: 'username exists' });
+  const user = { id: users.length + 1, username, level: 1, vip_level: 0 };
+  users.push({ ...user, password });
+  // create default city for user
+  const cityId = cities.length + 1;
+  cities.push({ id: cityId, owner_id: user.id, name: `${username}的城池`, level: 1, x: 10 + cityId, y: 10 + cityId });
+  resources[cityId] = { city_id: cityId, food: 100, wood: 100, iron: 50, coin: 200 };
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+  res.status(201).json({ token, user });
+});
 
-那么最后的我们新建一个 `wake up` 脚本资源看看，效果如下图：
+app.post('/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username && u.password === password);
+  if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+  res.json({ token, user: { id: user.id, username: user.username, level: user.level, vip_level: user.vip_level } });
+});
 
-![custom script menu](setup/custom-script-menu.png)
+// Get current user
+app.get('/users/me', authMiddleware, (req, res) => {
+  const user = users.find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  res.json({ id: user.id, username: user.username, level: user.level, vip_level: user.vip_level });
+});
 
-![custom script result](setup/custom-script-result.png)
+// Cities
+app.get('/cities/:cityId', (req, res) => {
+  const city = cities.find(c => c.id === Number(req.params.cityId));
+  if (!city) return res.status(404).json({ message: 'City not found' });
+  res.json(city);
+});
+app.get('/cities/:cityId/resources', (req, res) => {
+  const r = resources[Number(req.params.cityId)];
+  if (!r) return res.status(404).json({ message: 'Resources not found' });
+  res.json(r);
+});
+app.post('/cities/:cityId/collect-resources', authMiddleware, (req, res) => {
+  const cityId = Number(req.params.cityId);
+  const r = resources[cityId];
+  if (!r) return res.status(404).json({ message: 'Resources not found' });
+  // mock: zero out resources and return previous
+  const collected = { ...r };
+  resources[cityId] = { city_id: cityId, food: 0, wood: 0, iron: 0, coin: 0 };
+  res.json(collected);
+});
+
+// Generals
+app.get('/generals', authMiddleware, (req, res) => {
+  const list = generals.filter(g => g.owner_id === req.user.id || g.owner_id === 1);
+  res.json(list);
+});
+app.post('/generals/recruit', authMiddleware, (req, res) => {
+  const id = generals.length + 1;
+  const g = { id, owner_id: req.user.id, name: `新武將${id}`, rarity: 'common', level: 1, lead: 10, force: 10, intellect: 10, skills: [] };
+  generals.push(g);
+  res.status(201).json(g);
+});
+
+// Troops / March
+app.post('/troops/march', authMiddleware, (req, res) => {
+  const { city_id, target, troops } = req.body;
+  const marchId = marches.length + 1;
+  const eta_seconds = 60; // mock
+  marches.push({ marchId, owner_id: req.user.id, city_id, target, troops, eta_seconds });
+  res.status(202).json({ march_id: marchId, eta_seconds });
+});
+
+// Battles
+app.get('/battles/:battleId', (req, res) => {
+  const b = battles.find(x => x.id === Number(req.params.battleId));
+  if (!b) return res.status(404).json({ message: 'Battle not found' });
+  res.json(b);
+});
+
+// Map
+app.get('/map/points', (req, res) => {
+  const pts = cities.map(c => ({ id: c.id, type: 'city', x: c.x, y: c.y, owner: c.owner_id ? `user${c.owner_id}` : null }));
+  res.json(pts);
+});
+
+// Alliances
+app.get('/alliances', (req, res) => res.json(alliances));
+app.post('/alliances', authMiddleware, (req, res) => {
+  const id = alliances.length + 1;
+  const a = { id, name: req.body.name || `盟${id}`, leader_id: req.user.id, members_count: 1 };
+  alliances.push(a);
+  res.status(201).json(a);
+});
+app.post('/alliances/:allianceId/join', authMiddleware, (req, res) => {
+  const a = alliances.find(x => x.id === Number(req.params.allianceId));
+  if (!a) return res.status(404).json({ message: 'Alliance not found' });
+  a.members_count += 1;
+  res.json(a);
+});
+
+// Tasks
+app.get('/tasks', authMiddleware, (req, res) => {
+  res.json([{ id: 1, title: '新手任務：建造農田', status: 'open' }]);
+});
+
+app.listen(PORT, () => {
+  console.log(`Mock API running on http://localhost:${PORT}`);
+});
+JS
+
+echo "Writing README.md..."
+cat > README.md <<'MD'
+# 三國主公 — OpenAPI 規範與 Mock Server
+
+此目錄包含本專案的 OpenAPI 規範與一個簡易的本地 mock 後端，供前端與後端在開發初期對齊 API contract 與本地測試使用。
+
+目錄結構（建議）
+- docs/openapi.yaml        # OpenAPI 3.0 規範
+- server/package.json      # mock server 依賴與 scripts
+- server/index.js          # mock server 實作（Express + JWT, in-memory）
+
+快速上手（本機）
+1. 取得 feature 分支（或在本機建立並切到 feature）
+   git fetch origin feature
+   git checkout feature
+
+2. 在專案根目錄（已包含 docs/ 與 server/）安裝依賴並啟動 mock server
+   ```bash
+   cd server
+   npm install
+   # 設定 JWT secret
+   export JWT_SECRET="your_local_secret"   # macOS / Linux
+   # Windows PowerShell:
+   # $env:JWT_SECRET="your_local_secret"
+   npm start
